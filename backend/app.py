@@ -7,9 +7,15 @@ from dotenv import load_dotenv
 from flask_cors import CORS
 
 app = Flask(__name__)
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True
+)
 app.secret_key = "indigo_secret_key_123" 
 # Enable CORS for all domains on all routes, supporting credentials (cookies)
-CORS(app, supports_credentials=True)
+CORS(app,
+     supports_credentials=True,
+     origins=["https://your-frontend-domain.com"])
 
 # --- CONFIGURATION ---
 load_dotenv() # This loads the .env file
