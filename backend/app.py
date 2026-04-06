@@ -15,7 +15,7 @@ app.secret_key = "indigo_secret_key_123"
 # Enable CORS for all domains on all routes, supporting credentials (cookies)
 CORS(app,
      supports_credentials=True,
-     origins=["https://your-frontend-domain.com"])
+     origins=["https://indibot.vercel.app/"])
 
 # --- CONFIGURATION ---
 load_dotenv() # This loads the .env file
