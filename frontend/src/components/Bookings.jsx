@@ -108,7 +108,7 @@ const Bookings = () => {
 
     const fetchBookings = async () => {
         try {
-            const response = await fetch('/api/bookings');
+            const response = await apiFetch('/api/bookings');
             if (response.ok) {
                 const data = await response.json();
                 setBookings(data.bookings);

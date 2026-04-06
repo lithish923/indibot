@@ -5,6 +5,7 @@ import BookingConfirmation from './BookingConfirmation';
 import BookingReview from './BookingReview';
 import PaymentModal from './PaymentModal';
 import MessageRenderer from './MessageRenderer';
+import { apiFetch } from '../api';
 
 const Chat = ({ user, setIsAuthenticated }) => {
     const [messages, setMessages] = useState([
@@ -25,7 +26,7 @@ const Chat = ({ user, setIsAuthenticated }) => {
 
     const handleLogout = async () => {
         try {
-            await fetch('/api/logout', { method: 'POST' });
+            await apiFetch('/api/logout', { method: 'POST' });
             setIsAuthenticated(false);
         } catch (error) {
             console.error('Logout failed', error);
@@ -43,7 +44,7 @@ const Chat = ({ user, setIsAuthenticated }) => {
         setIsLoading(true);
 
         try {
-            const response = await fetch('/api/chat', {
+            const response = await apiFetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: messageToSend }),

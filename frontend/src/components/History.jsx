@@ -21,7 +21,7 @@ const History = () => {
 
     const fetchConversations = async () => {
         try {
-            const response = await fetch('/api/history');
+            const response = await apiFetch('/api/history');
             if (response.ok) {
                 const data = await response.json();
                 setConversations(data.conversations);

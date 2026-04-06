@@ -6,6 +6,7 @@ import Chat from './components/Chat';
 import Bookings from './components/Bookings';
 import History from './components/History';
 import Sidebar from './components/Sidebar';
+import { apiFetch } from './api';
 
 // Layout component to wrap authenticated routes
 const Layout = ({ children, onLogout, onNewChat }) => {
@@ -31,7 +32,7 @@ function App() {
 
     const checkAuth = async () => {
         try {
-            const response = await fetch('/api/check-auth');
+            const response = await apiFetch('/api/check-auth');
             if (response.ok) {
                 const data = await response.json();
                 setIsAuthenticated(true);
@@ -49,7 +50,7 @@ function App() {
 
     const handleLogout = async () => {
         try {
-            await fetch('/api/logout', { method: 'POST' });
+            await apiFetch('/api/logout', { method: 'POST' });
             setIsAuthenticated(false);
             setUser(null);
         } catch (error) {
@@ -59,7 +60,7 @@ function App() {
 
     const handleNewChat = async () => {
         try {
-            await fetch('/api/chat/new', { method: 'POST' });
+            await apiFetch('/api/chat/new', { method: 'POST' });
             setChatId(prev => prev + 1); // Remount Chat component
         } catch (error) {
             console.error("Failed to start new chat", error);

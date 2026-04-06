@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Plane } from 'lucide-react';
+import { apiFetch } from '../api';
 
 const Login = ({ setIsAuthenticated, setUser }) => {
     const [username, setUsernameInput] = useState('');
@@ -13,10 +14,10 @@ const Login = ({ setIsAuthenticated, setUser }) => {
         setError('');
 
         try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }),
+            const response = await apiFetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
             });
 
             const data = await response.json();
