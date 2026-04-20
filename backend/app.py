@@ -22,24 +22,34 @@ CORS(app,
 # --- CONFIGURATION ---
 load_dotenv() # This loads the .env file
 
-# 1. FIXED: Get the key securely
-API_KEY = os.getenv("GEMINI_API_KEY")
+# 1. FIXED: Get the keys securely (comma separated)
+API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]
+current_key_idx = 0
+global model
+model = None
 
-# Check if key loaded correctly
-if not API_KEY:
-    print("CRITICAL ERROR: API Key not found. Please create a .env file or hardcode it.")
-
-# 2. FIXED: Use the correct variable name (API_KEY, not GOOGLE_API_KEY)
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-    
-    # Use 2.5-flash (1.5 does not exist)
+def switch_to_next_api_key():
+    global current_key_idx, model
+    if len(API_KEYS) <= 1:
+        return False
+    current_key_idx = (current_key_idx + 1) % len(API_KEYS)
+    print(f"Switching to API Key {current_key_idx+1} of {len(API_KEYS)}")
+    genai.configure(api_key=API_KEYS[current_key_idx])
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
     except:
         model = genai.GenerativeModel('gemini-2.5-pro')
+    return True
+
+# Check if key loaded correctly
+if not API_KEYS:
+    print("CRITICAL ERROR: API Key not found. Please create a .env file or hardcode it.")
 else:
-    model = None
+    genai.configure(api_key=API_KEYS[current_key_idx])
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+    except:
+        model = genai.GenerativeModel('gemini-2.5-pro')
 
 chat_history = []
 
@@ -499,7 +509,7 @@ def chat():
     import time
     import re
     
-    max_retries = 2
+    max_retries = max(3, len(API_KEYS) * 2) if API_KEYS else 1
     retries = 0
     bot_reply = ""
     while retries < max_retries:
@@ -509,12 +519,25 @@ def chat():
             break
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "Quota exceeded" in err_str:
-                match = re.search(r'retry in ([\d\.]+)s', err_str)
-                wait_time = float(match.group(1)) + 1 if match else 60
-                print(f"Rate limited. Waiting {wait_time}s before retrying ({retries+1}/{max_retries})...")
-                time.sleep(wait_time)
-                retries += 1
+            is_rate_limit = "429" in err_str or "Quota exceeded" in err_str
+            is_key_error = "400" in err_str or "API_KEY_INVALID" in err_str or "expired" in err_str
+            
+            if is_rate_limit or is_key_error:
+                # Try to switch keys first
+                if len(API_KEYS) > 1 and switch_to_next_api_key():
+                    retries += 1
+                    continue
+                
+                # If no other keys, we must sleep if it's a rate limit
+                if is_rate_limit:
+                    match = re.search(r'retry in ([\d\.]+)s', err_str)
+                    wait_time = float(match.group(1)) + 1 if match else 60
+                    print(f"Rate limited. Waiting {wait_time}s before retrying ({retries+1}/{max_retries})...")
+                    time.sleep(wait_time)
+                    retries += 1
+                else:
+                    print(f"AI Generation Error: {e}")
+                    return jsonify({"error": "Failed to generate response (API Key Expired)", "details": err_str}), 500
             else:
                 print(f"AI Generation Error: {e}")
                 return jsonify({"error": "Failed to generate response", "details": err_str}), 500
