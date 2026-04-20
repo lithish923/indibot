@@ -9,7 +9,7 @@ const Sidebar = ({ onNewChat, onLogout }) => {
         if (onNewChat) {
             await onNewChat();
         }
-        navigate('/');
+        navigate('/chat');
     };
 
     const navItems = [

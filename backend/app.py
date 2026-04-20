@@ -33,7 +33,7 @@ if not API_KEY:
 if API_KEY:
     genai.configure(api_key=API_KEY)
     
-    # Use 1.5-flash (2.5 does not exist yet)
+    # Use 2.5-flash (1.5 does not exist)
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
     except:
@@ -211,6 +211,34 @@ Your goal is to book a flight by collecting ALL necessary details.
    ```
    
 IMPORTANT: Do not actually book. Keep responses short. use 24h format for internal logic but 12h for display if needed.
+
+### Modification Process:
+If the user requests to modify an existing booking (e.g., change date, change passenger):
+1. **Confirm**: Confirm their existing PNR (it will be provided in [User Context]) and what they want to change.
+2. **Quote Fee**: Calculate a fictional Fare Difference + Change fee (e.g. ₹2,000) and tell the user. Ask if they want to proceed.
+3. **Payment**: Generate a `payment_request` JSON for the fee:
+   ```json
+   {
+     "status": "payment_request",
+     "amount": "₹2,000"
+   }
+   ```
+4. **Modified Confirmation**: Once paid, return a `modified` JSON object EXACTLY like this:
+   ```json
+   {
+     "status": "modified",
+     "pnr": "THE_EXISTING_PNR",
+     "flight_no": "...",
+     "origin": "...",
+     "destination": "...",
+     "date": "NEW_DATE",
+     "price": "...",
+     "passengers": [...],
+     "contact": {...},
+     "extras": {...},
+     "payment": {"method": "UPI", "status": "Paid (Modification)"}
+   }
+   ```
 """
 
 # ... ROUTES ...
@@ -347,6 +375,50 @@ def new_chat():
     
     return jsonify({"success": True, "message": "New chat context ready"})
 
+@app.route('/api/chat/current', methods=['GET'])
+def current_chat():
+    if 'username' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    conversation_id = session.get('conversation_id')
+    if not conversation_id:
+        return jsonify({"messages": []})
+        
+    username = session['username']
+    conn = sqlite3.connect('users.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM chats WHERE conversation_id = ? AND username = ? ORDER BY timestamp ASC", (conversation_id, username))
+    rows = c.fetchall()
+    conn.close()
+    
+    messages = [dict(row) for row in rows]
+    return jsonify({"messages": messages, "conversation_id": conversation_id})
+
+@app.route('/api/chat/continue', methods=['POST'])
+def continue_chat():
+    if 'username' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json()
+    conversation_id = data.get('conversation_id')
+    
+    if not conversation_id:
+        return jsonify({"error": "Missing conversation_id"}), 400
+        
+    username = session['username']
+    
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT id FROM conversations WHERE id = ? AND username = ?", (conversation_id, username))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({"error": "Conversation not found or unauthorized"}), 404
+    conn.close()
+    
+    session['conversation_id'] = conversation_id
+    return jsonify({"success": True, "message": "Conversation context restored"})
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     # Protect the API route too
@@ -354,6 +426,7 @@ def chat():
         return jsonify({"error": "Unauthorized"}), 401
 
     user_message = request.json.get("message")
+    req_conversation_id = request.json.get("conversation_id")
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
     
@@ -362,8 +435,8 @@ def chat():
 
     username = session['username']
     
-    # 1. Get Conversation ID (Don't create yet)
-    conversation_id = session.get('conversation_id')
+    # 1. Get Conversation ID
+    conversation_id = req_conversation_id or session.get('conversation_id')
     
     # 2. Prepare Context (History + Saved Passengers)
     saved_passengers = []
@@ -383,6 +456,14 @@ def chat():
         print(f"Error fetching saved passengers: {e}")
         saved_passengers = []
 
+    # Fetch Active Bookings
+    try:
+        c.execute("SELECT pnr, flight_no, origin, destination, date, details FROM bookings WHERE username = ? AND status = 'confirmed'", (username,))
+        active_bookings = [dict(row) for row in c.fetchall()]
+    except Exception as e:
+        print(f"Error fetching bookings: {e}")
+        active_bookings = []
+
     # Fetch History if conversation exists
     if conversation_id:
         c.execute("SELECT role, message FROM chats WHERE conversation_id = ? ORDER BY timestamp ASC", (conversation_id,))
@@ -391,11 +472,20 @@ def chat():
     conn.close()
 
     # 3. Build Messages for AI
-    context_str = ""
+    context_str = "\\n[User Context]\\n"
     if saved_passengers:
         names = [p.get('name', 'Unknown') for p in saved_passengers]
-        context_str = f"\\n[User Context]\\nKnown Passengers: {', '.join(names)}. Ask if they want to use these details."
+        context_str += f"Known Passengers: {', '.join(names)}. Ask if they want to use these details.\\n"
     
+    if active_bookings:
+        bookings_summary = []
+        for b in active_bookings:
+            try:
+                p_len = len(json.loads(b['details']).get('passengers', []))
+            except:
+                p_len = 0
+            bookings_summary.append(f"PNR: {b['pnr']} | Flight: {b['flight_no']} | Date: {b['date']} | Route: {b['origin']}->{b['destination']} | PassengersCount: {p_len}")
+        context_str += f"Confirmed Bookings: {'; '.join(bookings_summary)}. Use this to help modify bookings.\\n"
     messages = [{"role": "user", "parts": [SYSTEM_INSTRUCTION + context_str]},
                 {"role": "model", "parts": ["Understood. I am IndiBot."]}]
     
@@ -406,12 +496,30 @@ def chat():
     messages.append({"role": "user", "parts": [user_message]})
     
     # 4. Generate AI Response
-    try:
-        response = model.generate_content(messages)
-        bot_reply = response.text
-    except Exception as e:
-        print(f"AI Generation Error: {e}")
-        return jsonify({"error": "Failed to generate response", "details": str(e)}), 500
+    import time
+    import re
+    
+    max_retries = 2
+    retries = 0
+    bot_reply = ""
+    while retries < max_retries:
+        try:
+            response = model.generate_content(messages)
+            bot_reply = response.text
+            break
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "Quota exceeded" in err_str:
+                match = re.search(r'retry in ([\d\.]+)s', err_str)
+                wait_time = float(match.group(1)) + 1 if match else 60
+                print(f"Rate limited. Waiting {wait_time}s before retrying ({retries+1}/{max_retries})...")
+                time.sleep(wait_time)
+                retries += 1
+            else:
+                print(f"AI Generation Error: {e}")
+                return jsonify({"error": "Failed to generate response", "details": err_str}), 500
+    else:
+        return jsonify({"error": "Rate limit exceeded and retries exhausted. Please try again later."}), 500
 
     # 5. Save to DB (Lazy Creation)
     try:
@@ -480,6 +588,20 @@ def chat():
                               (json.dumps(updated_saved), username))
                     
                     print("DEBUG: Booking saved successfully")
+                elif booking_data.get('status') == 'modified':
+                    print("DEBUG: Status is modified. Updating DB...")
+                    flight_no = booking_data.get('flight_no', 'N/A')
+                    pnr = booking_data.get('pnr', 'N/A')
+                    origin = booking_data.get('origin', 'Unknown')
+                    destination = booking_data.get('destination', 'Unknown')
+                    date = booking_data.get('date', 'Unknown')
+                    price = booking_data.get('price', 'Unknown')
+                    
+                    c.execute('''UPDATE bookings SET
+                                 flight_no = ?, origin = ?, destination = ?, date = ?, price = ?, details = ?
+                                 WHERE pnr = ? AND username = ?''',
+                                 (flight_no, origin, destination, date, price, booking_json_str, pnr, username))
+                    print("DEBUG: Booking modified successfully")
                 else:
                      print(f"DEBUG: JSON found but status is {booking_data.get('status')}")
 
@@ -498,7 +620,7 @@ def chat():
         if conn:
             conn.close()
         
-    return jsonify({"response": bot_reply})
+    return jsonify({"response": bot_reply, "conversation_id": conversation_id})
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000, host='0.0.0.0')

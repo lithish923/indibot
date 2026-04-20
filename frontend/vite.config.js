@@ -8,7 +8,7 @@ export default defineConfig({
     host: true, // Expose to network
     proxy: {
       '/api': {
-        target: 'https://indibot-backend.onrender.com',
+        target: 'http://127.0.0.1:5000',
         changeOrigin: true
       }
     }

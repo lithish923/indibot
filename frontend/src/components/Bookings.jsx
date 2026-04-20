@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Ticket, Calendar, MapPin, Eye, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { apiFetch } from '../api';
 
-const BookingModal = ({ booking, onClose }) => {
+const BookingModal = ({ booking, onClose, onModify }) => {
     if (!booking) return null;
     const details = booking.details || {};
     const contact = details.contact || {};
@@ -92,6 +94,17 @@ const BookingModal = ({ booking, onClose }) => {
                         </div>
                     </section>
                 </div>
+                
+                {/* Footer Actions */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                    <button onClick={onClose} className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium">Close</button>
+                    <button 
+                        onClick={() => onModify(booking)} 
+                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium whitespace-nowrap"
+                    >
+                        Modify Booking
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -101,6 +114,7 @@ const Bookings = () => {
     const [bookings, setBookings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedBooking, setSelectedBooking] = useState(null);
+    const navigate = useNavigate();
 
     useEffect(() => {
         fetchBookings();
@@ -123,7 +137,7 @@ const Bookings = () => {
     if (loading) return <div className="p-8 text-center text-gray-500">Loading bookings...</div>;
 
     return (
-        <div className="p-6 max-w-4xl mx-auto">
+        <div className="p-6 w-full mx-auto h-full overflow-y-auto pr-2">
             <h1 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                 <Ticket className="text-indigo-600" />
                 My Bookings
@@ -177,7 +191,14 @@ const Bookings = () => {
 
             {/* Modal */}
             {selectedBooking && (
-                <BookingModal booking={selectedBooking} onClose={() => setSelectedBooking(null)} />
+                <BookingModal 
+                    booking={selectedBooking} 
+                    onClose={() => setSelectedBooking(null)} 
+                    onModify={(booking) => {
+                        setSelectedBooking(null);
+                        navigate('/chat', { state: { initialMessage: `I want to modify my booking (PNR: ${booking.pnr})` } });
+                    }}
+                />
             )}
         </div>
     );

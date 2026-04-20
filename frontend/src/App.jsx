@@ -76,7 +76,7 @@ function App() {
     }
 
     return (
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
                 <Route
                     path="/login"
@@ -88,12 +88,23 @@ function App() {
                 />
 
                 {/* Protected Routes */}
+                <Route path="/" element={<Navigate to="/chat" replace />} />
                 <Route
-                    path="/"
+                    path="/chat"
                     element={
                         isAuthenticated ? (
                             <Layout onLogout={handleLogout} onNewChat={handleNewChat}>
-                                <Chat key={chatId} user={user} setIsAuthenticated={setIsAuthenticated} />
+                                <Chat key="new" user={user} setIsAuthenticated={setIsAuthenticated} />
+                            </Layout>
+                        ) : <Navigate to="/login" />
+                    }
+                />
+                <Route
+                    path="/chat/:chatId"
+                    element={
+                        isAuthenticated ? (
+                            <Layout onLogout={handleLogout} onNewChat={handleNewChat}>
+                                <Chat user={user} setIsAuthenticated={setIsAuthenticated} />
                             </Layout>
                         ) : <Navigate to="/login" />
                     }

@@ -129,7 +129,7 @@ const MessageRenderer = ({ text, onFlightSelect, onReviewConfirm, onPaymentReque
                         </div>
                     </div>
                 );
-            } else if (jsonContent.status === 'confirmed') {
+            } else if (jsonContent.status === 'confirmed' || jsonContent.status === 'modified') {
                 // Confirmation
                 return (
                     <div>

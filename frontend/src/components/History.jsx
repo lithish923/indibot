@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import MessageRenderer from './MessageRenderer';
+import { apiFetch } from '../api';
 
 const History = () => {
     const [conversations, setConversations] = useState([]);
@@ -8,6 +10,13 @@ const History = () => {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingMessages, setLoadingMessages] = useState(false);
+    const navigate = useNavigate();
+
+    const handleContinue = () => {
+        if (selectedChatId) {
+            navigate('/chat/' + selectedChatId);
+        }
+    };
 
     useEffect(() => {
         fetchConversations();
@@ -40,7 +49,7 @@ const History = () => {
     const fetchMessages = async (chatId) => {
         setLoadingMessages(true);
         try {
-            const response = await fetch(`/api/history/${chatId}`);
+            const response = await apiFetch(`/api/history/${chatId}`);
             if (response.ok) {
                 const data = await response.json();
                 setMessages(data.messages);
@@ -88,9 +97,20 @@ const History = () => {
             </div>
 
             {/* Main Content - Chat Messages */}
-            <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-100">
+            <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-100 relative">
                 {selectedChatId ? (
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    <>
+                        <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm z-10 w-full shrink-0">
+                            <h2 className="font-semibold text-gray-800">Chat History</h2>
+                            <button 
+                                onClick={handleContinue}
+                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center space-x-2 text-sm font-medium shadow-sm"
+                            >
+                                <span>Continue Conversation</span>
+                                <ArrowRight size={16} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
                         {loadingMessages ? (
                             <div className="text-center text-gray-500 mt-10">Loading messages...</div>
                         ) : (
@@ -117,6 +137,7 @@ const History = () => {
                             <div className="text-center text-gray-500">No messages in this conversation.</div>
                         )}
                     </div>
+                    </>
                 ) : (
                     <div className="flex-1 flex items-center justify-center text-gray-400">
                         <div className="text-center">

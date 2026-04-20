@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, LogOut, Plane, User, Loader2 } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import FlightTicket from './FlightTicket';
 import BookingConfirmation from './BookingConfirmation';
 import BookingReview from './BookingReview';
@@ -8,11 +9,14 @@ import MessageRenderer from './MessageRenderer';
 import { apiFetch } from '../api';
 
 const Chat = ({ user, setIsAuthenticated }) => {
-    const [messages, setMessages] = useState([
-        { role: 'model', parts: ['Hello! I am IndiBot. To start, please tell me: \n1. Origin & Destination\n2. Travel Date\n3. Class (Economy/Business)'] }
-    ]);
+    const { chatId } = useParams();
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [paymentModalData, setPaymentModalData] = useState(null);
     const messagesEndRef = useRef(null);
 
@@ -23,6 +27,39 @@ const Chat = ({ user, setIsAuthenticated }) => {
     useEffect(() => {
         scrollToBottom();
     }, [messages, isLoading]);
+
+    useEffect(() => {
+        const fetchCurrentChat = async () => {
+            if (!chatId) {
+                setMessages([{ role: 'model', parts: ['Hello! I am IndiBot. To start, please tell me: \n1. Origin & Destination\n2. Travel Date\n3. Class (Economy/Business)'] }]);
+                setIsInitialLoading(false);
+                return;
+            }
+
+            try {
+                setIsInitialLoading(true);
+                const response = await apiFetch(`/api/history/${chatId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.messages && data.messages.length > 0) {
+                        const formatted = data.messages.map(msg => ({
+                            role: msg.role === 'model' ? 'model' : 'user',
+                            parts: [msg.message]
+                        }));
+                        setMessages(formatted);
+                    } else {
+                        setMessages([{ role: 'model', parts: ['Hello! I am IndiBot. To start, please tell me: \n1. Origin & Destination\n2. Travel Date\n3. Class (Economy/Business)'] }]);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to load chat history", error);
+                setMessages([{ role: 'model', parts: ['Hello! I am IndiBot. To start, please tell me: \n1. Origin & Destination\n2. Travel Date\n3. Class (Economy/Business)'] }]);
+            } finally {
+                setIsInitialLoading(false);
+            }
+        };
+        fetchCurrentChat();
+    }, [chatId]);
 
     const handleLogout = async () => {
         try {
@@ -47,15 +84,19 @@ const Chat = ({ user, setIsAuthenticated }) => {
             const response = await apiFetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: messageToSend }),
+                body: JSON.stringify({ message: messageToSend, conversation_id: chatId || null }),
             });
 
             const data = await response.json();
 
             if (response.ok) {
                 setMessages(prev => [...prev, { role: 'model', parts: [data.response] }]);
+                if (!chatId && data.conversation_id) {
+                    navigate('/chat/' + data.conversation_id, { replace: true });
+                }
             } else {
-                setMessages(prev => [...prev, { role: 'error', parts: ['Sorry, something went wrong.'] }]);
+                const errorMsg = data.details || data.error || 'Sorry, something went wrong.';
+                setMessages(prev => [...prev, { role: 'error', parts: [`Error: ${errorMsg}`] }]);
             }
         } catch (error) {
             setMessages(prev => [...prev, { role: 'error', parts: ['Network error. Please try again.'] }]);
@@ -63,6 +104,14 @@ const Chat = ({ user, setIsAuthenticated }) => {
             setIsLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!isInitialLoading && !chatId && location.state?.initialMessage) {
+            const msg = location.state.initialMessage;
+            navigate('/chat', { replace: true, state: {} });
+            sendMessage(null, msg);
+        }
+    }, [isInitialLoading, chatId, location.state, navigate]);
 
     const handleFlightSelect = (flight) => {
         sendMessage(null, `I want to book flight ${flight.flight_no} (${flight.class || 'Economy'}) for ${flight.price}`);
@@ -100,7 +149,14 @@ const Chat = ({ user, setIsAuthenticated }) => {
 
             {/* Chat Area */}
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-                {messages.map((msg, index) => (
+                {isInitialLoading ? (
+                    <div className="flex h-full items-center justify-center text-gray-500 gap-3">
+                        <Loader2 className="animate-spin" size={24} />
+                        <span>Loading conversation...</span>
+                    </div>
+                ) : (
+                    <>
+                        {messages.map((msg, index) => (
                     <div
                         key={index}
                         className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -135,6 +191,8 @@ const Chat = ({ user, setIsAuthenticated }) => {
                     </div>
                 )}
                 <div ref={messagesEndRef} />
+                    </>
+                )}
             </main>
 
             {/* Input Area */}
